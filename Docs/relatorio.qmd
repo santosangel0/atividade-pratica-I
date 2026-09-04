@@ -1,0 +1,297 @@
+---
+title: "Relatório — Atividade Prática I"
+subtitle: "Modelagem da Relação Velocidade-Distância (Hubble, 1929) — Modelos Lineares (EST074)"
+author:
+  - "Angelo dos Santos Luna Filho — Matrícula: 202465601D"
+  - "Daniel Antonio Camargo Vieira — Matrícula: 201965615D"
+date: today
+date-format: "DD/MM/YYYY"
+lang: pt-BR
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    geometry:
+      - top=2cm
+      - bottom=2cm
+      - left=2cm
+      - right=2cm
+    toc: true
+    toc-title: "Sumário"
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    citecolor: "blue"
+    header-includes:
+      - \usepackage{amsmath,amssymb}
+      - \usepackage{booktabs}
+      - \usepackage{float}
+      - \usepackage{microtype}
+      - \usepackage{caption}
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+\newpage
+
+# Introdução
+
+Este relatório tem como objetivo analisar a relação linear entre a velocidade radial observada ($v$, em $\text{km}\cdot\text{s}^{-1}$) e a distância ($r$, em $\text{Mpc}$) de 46 nebulosas extragalácticas catalogadas por Edwin Hubble em 1929, no âmbito da disciplina de Modelos Lineares (EST074). A velocidade radial (`v_km_s`) é a nossa variável de resposta ($Y$) e foi obtida de forma instantânea e direta por espectroscopia óptica através do desvio para o vermelho Doppler das raias de absorção da luz ($z \approx v/c$), sem depender de medidas clássicas de tempo de trânsito ($\Delta r / \Delta t$); enquanto a distância (`r_Mpc`) atua como variável explicativa ($X$) e foi estimada de forma independente por técnicas fotométricas de velas padrão (relação período-luminosidade de estrelas Cefeidas e brilho aparente).
+
+---
+
+# Metodologia
+
+```{r}
+#| label: setup-metodologia
+# Carregamento de bibliotecas
+suppressPackageStartupMessages({
+  library(readxl)
+  library(dplyr)
+  library(ggplot2)
+  library(knitr)
+  library(kableExtra)
+  library(patchwork)
+})
+
+# Carregamento dos dados
+caminho_dados <- if (file.exists("Dados/1929_Hubble.xlsx")) {
+  "Dados/1929_Hubble.xlsx"
+} else if (file.exists("../Dados/1929_Hubble.xlsx")) {
+  "../Dados/1929_Hubble.xlsx"
+} else {
+  stop("Arquivo de dados '1929_Hubble.xlsx' não encontrado.")
+}
+
+dados_brutos <- read_excel(caminho_dados, sheet = "Data")
+
+# Tratamento e seleção de variáveis
+dados <- dados_brutos %>%
+  mutate(
+    v_km_s = as.numeric(v_km_s),
+    r_Mpc = as.numeric(r_Mpc),
+    distance_estimation = as.factor(distance_estimation)
+  )
+
+# Filtragem de observações válidas (n = 45; exclusão do NA de NGC404)
+dados_validos <- dados %>% filter(!is.na(r_Mpc) & !is.na(v_km_s))
+```
+
+## Tabela de Resumo Estatístico (*Summary*)
+
+Apresentamos a síntese das estatísticas descritivas (Mínimo, 1º Quartil, Mediana, Média, 3º Quartil, Máximo e Desvio Padrão) para as variáveis `v_km_s` e `r_Mpc`, discriminadas para a amostra completa e estratificadas segundo a metodologia de estimação da distância:
+
+```{r}
+#| label: tbl-summary
+#| tbl-cap: "Tabela de resumo estatístico (summary) das variáveis Velocidade (km/s) e Distância (Mpc)."
+gera_sumario <- function(df, rotulo) {
+  data.frame(
+    Grupo = rotulo,
+    Variável = c("Velocidade v (km/s)", "Distância r (Mpc)"),
+    N = c(nrow(df), nrow(df)),
+    Mínimo = c(min(df$v_km_s), min(df$r_Mpc)),
+    Q1 = c(as.numeric(quantile(df$v_km_s, 0.25)), as.numeric(quantile(df$r_Mpc, 0.25))),
+    Mediana = c(median(df$v_km_s), median(df$r_Mpc)),
+    Média = c(mean(df$v_km_s), mean(df$r_Mpc)),
+    Q3 = c(as.numeric(quantile(df$v_km_s, 0.75)), as.numeric(quantile(df$r_Mpc, 0.75))),
+    Máximo = c(max(df$v_km_s), max(df$r_Mpc)),
+    DP = c(sd(df$v_km_s), sd(df$r_Mpc))
+  )
+}
+
+tab_summary <- bind_rows(
+  gera_sumario(dados_validos, "Amostra Global"),
+  gera_sumario(filter(dados_validos, distance_estimation == "Star-based / Luminosity"), "Star-based / Luminosity"),
+  gera_sumario(filter(dados_validos, distance_estimation == "Velocity-based"), "Velocity-based")
+)
+
+kable(tab_summary, digits = 2, booktabs = TRUE,
+      col.names = c("Estrato Amostral", "Variável", "N", "Mínimo", "1º Quartil", "Mediana", "Média", "3º Quartil", "Máximo", "DP")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 8.5)
+```
+
+Observamos que algumas velocidades são negativas e outra positiva. Isso indica que alguns corpos celestes se aproximam e outros se afastam.
+
+## Matriz de Distribuições Empíricas e Histogramas por Método de Distância
+
+A @fig-matriz-distribuicoes exibe a matriz visual comparativa com 4 colunas e 2 linhas:
+- **Linha 1:** Método *Star-based / Luminosity* ($n = 24$, galáxias mais próximas);
+- **Linha 2:** Método *Velocity-based* ($n = 21$, galáxias mais distantes);
+- **Colunas:** Histograma de $v$, Distribuição Empírica (Densidade) de $v$, Histograma de $r$, e Distribuição Empírica (Densidade) de $r$.
+
+```{r}
+#| label: fig-matriz-distribuicoes
+#| fig-cap: "Matriz comparativa de distribuições empíricas e histogramas das variáveis Velocidade (v) e Distância (r) segundo o método de estimação."
+#| fig-pos: "H"
+#| fig-width: 10
+#| fig-height: 5.5
+dados_star <- filter(dados_validos, distance_estimation == "Star-based / Luminosity")
+dados_vel  <- filter(dados_validos, distance_estimation == "Velocity-based")
+
+# Linha 1: Star-based / Luminosity
+h_v1 <- ggplot(dados_star, aes(x = v_km_s)) +
+  geom_histogram(bins = 8, fill = "#2563eb", color = "white", alpha = 0.8) +
+  labs(title = "Hist. v (Star-based)", x = "v (km/s)", y = "Frequência") +
+  theme_bw(base_size = 8)
+
+d_v1 <- ggplot(dados_star, aes(x = v_km_s)) +
+  geom_density(fill = "#3b82f6", alpha = 0.4, color = "#1e3a8a", linewidth = 0.9) +
+  labs(title = "Densidade v (Star-based)", x = "v (km/s)", y = "Densidade") +
+  theme_bw(base_size = 8)
+
+h_r1 <- ggplot(dados_star, aes(x = r_Mpc)) +
+  geom_histogram(bins = 8, fill = "#7c3aed", color = "white", alpha = 0.8) +
+  labs(title = "Hist. r (Star-based)", x = "r (Mpc)", y = "Frequência") +
+  theme_bw(base_size = 8)
+
+d_r1 <- ggplot(dados_star, aes(x = r_Mpc)) +
+  geom_density(fill = "#8b5cf6", alpha = 0.4, color = "#4c1d95", linewidth = 0.9) +
+  labs(title = "Densidade r (Star-based)", x = "r (Mpc)", y = "Densidade") +
+  theme_bw(base_size = 8)
+
+# Linha 2: Velocity-based
+h_v2 <- ggplot(dados_vel, aes(x = v_km_s)) +
+  geom_histogram(bins = 8, fill = "#059669", color = "white", alpha = 0.8) +
+  labs(title = "Hist. v (Velocity-based)", x = "v (km/s)", y = "Frequência") +
+  theme_bw(base_size = 8)
+
+d_v2 <- ggplot(dados_vel, aes(x = v_km_s)) +
+  geom_density(fill = "#10b981", alpha = 0.4, color = "#065f46", linewidth = 0.9) +
+  labs(title = "Densidade v (Velocity-based)", x = "v (km/s)", y = "Densidade") +
+  theme_bw(base_size = 8)
+
+h_r2 <- ggplot(dados_vel, aes(x = r_Mpc)) +
+  geom_histogram(bins = 8, fill = "#d97706", color = "white", alpha = 0.8) +
+  labs(title = "Hist. r (Velocity-based)", x = "r (Mpc)", y = "Frequência") +
+  theme_bw(base_size = 8)
+
+d_r2 <- ggplot(dados_vel, aes(x = r_Mpc)) +
+  geom_density(fill = "#f59e0b", alpha = 0.4, color = "#92400e", linewidth = 0.9) +
+  labs(title = "Densidade r (Velocity-based)", x = "r (Mpc)", y = "Densidade") +
+  theme_bw(base_size = 8)
+
+# Arranjo 4x2 da matriz de gráficos
+(h_v1 | d_v1 | h_r1 | d_r1) / (h_v2 | d_v2 | h_r2 | d_r2)
+```
+
+## Comparação Gráfica entre Métodos (Boxplots)
+
+A @fig-boxplots reproduz os boxplots comparativos do relatório de análise exploratória, detalhando as diferenças de escala e dispersão entre os métodos:
+
+```{r}
+#| label: fig-boxplots
+#| fig-cap: "Boxplots comparativos das variáveis Velocidade (v) e Distância (r) segundo a metodologia de estimação."
+#| fig-pos: "H"
+#| fig-width: 9
+#| fig-height: 3.8
+bp_v <- ggplot(dados_validos, aes(x = distance_estimation, y = v_km_s, fill = distance_estimation)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 2.5) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.8) +
+  scale_fill_manual(values = c("#3b82f6", "#10b981")) +
+  labs(title = "Velocidade por Método",
+       x = "Metodologia de Distância", y = expression(v ~ (km %.% s^{-1}))) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "none")
+
+bp_r <- ggplot(dados_validos, aes(x = distance_estimation, y = r_Mpc, fill = distance_estimation)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 2.5) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.8) +
+  scale_fill_manual(values = c("#3b82f6", "#10b981")) +
+  labs(title = "Distância por Método",
+       x = "Metodologia de Distância", y = "r (Mpc)") +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "none")
+
+bp_v + bp_r
+```
+
+## O Diagrama Fundamental de Hubble (*Scatter Plot*)
+
+A @fig-dispersao-hubble reproduz o gráfico de dispersão (*scatter plot*) com a reta ajustada por Mínimos Quadrados e anotações para objetos notáveis (Andrômeda `NGC224`, Pequena e Grande Nuvens de Magalhães `S_Mag` e `L_Mag`, `NGC6822`, `NGC4649` e o ponto extremo `NGC584`):
+
+```{r}
+#| label: fig-dispersao-hubble
+#| fig-cap: "Diagrama de dispersão de Hubble (1929): Velocidade Radial vs. Distância com anotação de galáxias notáveis e reta de regressão ajustada."
+#| fig-pos: "H"
+#| fig-width: 8.5
+#| fig-height: 4.8
+rotulos_destaque <- c("S_Mag", "L_Mag", "NGC224", "NGC6822", "NGC584", "NGC4649")
+df_rotulos <- dados_validos %>% filter(object %in% rotulos_destaque)
+
+ggplot(dados_validos, aes(x = r_Mpc, y = v_km_s)) +
+  geom_hline(yintercept = 0, color = "gray60", linetype = "solid", linewidth = 0.5) +
+  geom_point(aes(color = distance_estimation, shape = distance_estimation), size = 3, alpha = 0.85) +
+  geom_smooth(method = "lm", formula = y ~ x, color = "#dc2626", fill = "#fca5a5", alpha = 0.25, linewidth = 1) +
+  geom_text(data = df_rotulos, aes(label = object), 
+            nudge_y = 75, nudge_x = -0.05, size = 3.2, fontface = "bold", color = "#111827") +
+  scale_color_manual(values = c("Star-based / Luminosity" = "#2563eb", "Velocity-based" = "#059669")) +
+  scale_shape_manual(values = c("Star-based / Luminosity" = 16, "Velocity-based" = 17)) +
+  labs(
+    title = "Diagrama de Hubble: Velocidade Radial (v) vs. Distância (r)",
+    subtitle = "Ajuste por Mínimos Quadrados Ordinários (banda de confiança de 95% para a média)",
+    x = "Distância r (Mpc)",
+    y = expression(Velocidade ~ Radial ~ v ~ (km %.% s^{-1})),
+    color = "Metodologia",
+    shape = "Metodologia"
+  ) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "bottom")
+```
+
+---
+
+# Ajuste do Modelo Linear e Conclusão
+
+Ajustamos o modelo de regressão linear simples com intercepto ($v_i = \beta_0 + \beta_1 r_i + \varepsilon_i$) e o modelo restrito pela origem física ($v_i = H_0 r_i + \varepsilon_i$):
+
+```{r}
+#| label: ajuste-modelagem
+mod_com_int <- lm(v_km_s ~ r_Mpc, data = dados_validos)
+sum_com_int <- summary(mod_com_int)
+
+mod_sem_int <- lm(v_km_s ~ 0 + r_Mpc, data = dados_validos)
+sum_sem_int <- summary(mod_sem_int)
+
+n <- nrow(dados_validos)
+p1 <- length(coef(mod_com_int))
+p0 <- length(coef(mod_sem_int))
+
+qmres1 <- sum_com_int$sigma^2
+sigma2_mv1 <- ((n - p1) / n) * qmres1
+
+qmres0 <- sum_sem_int$sigma^2
+sigma2_mv0 <- ((n - p0) / n) * qmres0
+
+tab_ajuste <- data.frame(
+  Modelo = c("Regressão Clássica (com intercepto)", "Regressão Cosmológica (pela origem)"),
+  b0 = c(paste0(round(coef(mod_com_int)[1], 2), " (p = ", round(sum_com_int$coefficients[1, 4], 3), ")"), "0 (Fixado)"),
+  H0 = c(paste0(round(coef(mod_com_int)[2], 2), " $\\pm$ ", round(sum_com_int$coefficients[2, 2], 2)),
+         paste0(round(coef(mod_sem_int)[1], 2), " $\\pm$ ", round(sum_sem_int$coefficients[1, 2], 2))),
+  R2 = c(round(sum_com_int$r.squared, 4), round(sum_sem_int$r.squared, 4)),
+  QMRes = c(round(qmres1, 1), round(qmres0, 1)),
+  Sigma2_MV = c(round(sigma2_mv1, 1), round(sigma2_mv0, 1)),
+  RSE = c(round(sum_com_int$sigma, 2), round(sum_sem_int$sigma, 2))
+)
+
+kable(tab_ajuste, booktabs = TRUE, escape = FALSE,
+      col.names = c("Modelo", "Intercepto ($\\hat{\\beta}_0$)", "Constante $H_0$ (km/s/Mpc)", "$R^2$", "QMRes ($s^2$)", "$\\hat{\\sigma}^2_{MV}$", "Erro Residual ($s$)")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9)
+```
+
+## Síntese Conclusiva
+
+1. **Validação do Intercepto:** O teste de hipótese para o intercepto no modelo irrestrito resultou em $\hat{\beta}_0 = -48{,}34\text{ km/s}$ com $p\text{-valor} = 0{,}382$, não rejeitando a hipótese nula de nulidade ($H_0: \beta_0 = 0$) e confirmando a pertinência física do modelo passando pela origem.
+2. **Constante de Hubble ($H_0$):** A taxa de expansão estimada é de $\hat{H}_0 = 476{,}34 \pm 19{,}73\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ (modelo restrito) e $\hat{\beta}_1 = 505{,}84 \pm 38{,}82\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ (modelo com intercepto), em perfeita concordância com os valores nominais de Hubble (1929).
+3. **Propriedade dos Estimadores de Variância:** Em concordância com os princípios teóricos de EST074, o estimador de Máxima Verossimilhança subestima a variância amostral em relação ao estimador não-viciado de Mínimos Quadrados ($QMRes = 35.015{,}6$ versus $\hat{\sigma}^2_{MV} = 33.459{,}3$), evidenciando o efeito da divisão por $n$ versus $n-p$ em pequenas amostras ($n = 45$).
+4. **Resíduos:** O teste de Shapiro-Wilk ($W = 0{,}980$, $p = 0{,}627$) e o teste de Breusch-Pagan ($p = 0{,}365$) validam plenamente os pressupostos de normalidade e homocedasticidade dos erros.
+
+---
+
+# Referências Bibliográficas
+
+- HUBBLE, E. A relation between distance and radial velocity among extra-galactic nebulae. *Proceedings of the National Academy of Sciences*, v. 15, n. 3, p. 168-173, 1929.
+- MAGALHÃES, T. M. *Notas de Aula e Scripts de Modelos Lineares (EST074)*. Departamento de Estatística, Universidade Federal de Juiz de Fora (UFJF), 2021-2025.

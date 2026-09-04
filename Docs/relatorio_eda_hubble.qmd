@@ -2,8 +2,9 @@
 title: "Relatório de Análise Exploratória de Dados"
 subtitle: "Investigação da Relação Velocidade-Distância no Conjunto de Dados Histórico de Hubble (1929) — EST074"
 author:
-  - "Angelo dos Santos Luna Filho"
-  - "Daniel Antonio Camargo Vieira"
+  - "Angelo dos Santos Luna Filho — Matrícula: 202465601D"
+  - "Daniel Antonio Camargo Vieira — Matrícula: 201965615D"
+
 date: today
 date-format: "DD/MM/YYYY"
 lang: pt-BR
