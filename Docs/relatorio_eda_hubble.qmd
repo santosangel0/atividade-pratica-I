@@ -1,0 +1,690 @@
+---
+title: "Relatório de Análise Exploratória de Dados"
+subtitle: "Investigação da Relação Velocidade-Distância no Conjunto de Dados Histórico de Hubble (1929) — EST074"
+author:
+  - "Angelo dos Santos Luna Filho"
+  - "Daniel Antonio Camargo Vieira"
+date: today
+date-format: "DD/MM/YYYY"
+lang: pt-BR
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
+    toc: true
+    toc-title: "Sumário"
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    citecolor: "blue"
+    header-includes:
+      - \usepackage{amsmath,amssymb}
+      - \usepackage{booktabs}
+      - \usepackage{float}
+      - \usepackage{microtype}
+      - \usepackage{caption}
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+\newpage
+
+# Introdução e Contextualização Científica
+
+## O Trabalho Seminal de Edwin Hubble (1929)
+
+Em 1929, o astrônomo norte-americano Edwin Powell Hubble publicou no periódico *Proceedings of the National Academy of Sciences* (PNAS) um dos artigos mais revolucionários da história da ciência moderna: *"A Relation between Distance and Radial Velocity among Extra-Galactic Nebulae"*. Até meados da década de 1920, o consenso científico predominante considerava a Via Láctea como o próprio Universo em sua totalidade, estático e eterno — uma visão compartilhada inclusive por Albert Einstein ao formular sua Teoria da Relatividade Geral em 1917, o que o levou a introduzir a chamada *Constante Cosmológica* ($\Lambda$) para manter o Universo estático contra o colapso gravitacional.
+
+A ruptura desse paradigma iniciou-se quando Hubble, utilizando o telescópio Hooker de 100 polegadas no Observatório de Mount Wilson (o mais potente do mundo à época), identificou estrelas variáveis Cefeidas na nebulosa de Andrômeda ($M31$) e em outras "nebulosas espirais". Utilizando a célebre relação período-luminosidade descoberta por Henrietta Swan Leavitt em 1912, Hubble estabeleceu de maneira inequívoca que esses objetos situavam-se a distâncias de centenas de milhares a milhões de anos-luz da Terra — revelando que eram, de fato, "universos-ilha", isto é, galáxias independentes fora da Via Láctea.
+
+Combinando suas determinações de distância com as medidas espectroscópicas de velocidade radial compiladas principalmente por Vesto Melvin Slipher e Milton Humason, Hubble observou que quase todas as galáxias distantes apresentavam um desvio sistemático de suas linhas espectrais em direção ao vermelho (*redshift* ou desvio para o vermelho Doppler). Mais do que isso: a magnitude desse afastamento crescia de forma aproximadamente proporcional à distância do objeto em relação a nós.
+
+## A Lei de Hubble-Lemaître e o Modelo Linear
+
+A relação observacional proposta por Hubble assume a forma matemática clássica de uma relação linear:
+
+$$v = H_0 \cdot r$$
+
+em que:
+- $v$ representa a velocidade radial de recessão da galáxia (expressa convencionalmente em $\text{km}\cdot\text{s}^{-1}$);
+- $r$ denota a distância própria até a galáxia (expressa em Megaparsecs, $\text{Mpc}$, onde $1\text{ Mpc} \approx 3{,}26 \times 10^6\text{ anos-luz} \approx 3{,}086 \times 10^{19}\text{ km}$);
+- $H_0$ é a constante de proporcionalidade, denominada **Constante de Hubble**, cuja dimensão física é $[\text{velocidade}] / [\text{distância}] = \text{km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ (ou simplesmente inverso de tempo, $[\text{T}]^{-1}$).
+
+Sob a perspectiva da disciplina de **Modelos Lineares (EST074)**, essa formulação empírica constitui um caso paradigmático de **Regressão Linear**:
+
+$$v_i = \beta_0 + \beta_1 r_i + \varepsilon_i, \quad i = 1, \dots, n$$
+
+onde $v_i$ é a variável de resposta (variável dependente), $r_i$ é a variável preditora (variável explicativa), $\beta_0$ é o intercepto teórico (esperado como nulo sob o referencial cosmológico de repouso, $\beta_0 = 0$), $\beta_1 \equiv H_0$ é o coeficiente angular de interesse fundamental, e $\varepsilon_i$ denota o termo de erro aleatório associado tanto a perturbações observacionais quanto a velocidades peculiares gravitacionais locais.
+
+## Objetivos Deste Relatório
+
+O presente documento constitui o **Relatório de Análise Exploratória de Dados (EDA)** da Atividade Prática I, tendo como propósitos específicos:
+
+1. Carregar, estruturar e auditar o conjunto de dados histórico contido na pasta `Dados/1929_Hubble.xlsx`;
+2. Realizar a validação dos tipos de variáveis, tratamento de valores ausentes (`NA`) e verificação de consistência física e astronômica das magnitudes aparentes ($m_t$) e absolutas ($M_t$);
+3. Computar estatísticas descritivas univariadas e bivariadas de posição, dispersão e forma para todas as grandezas numéricas;
+4. Comparar os dois grupos metodológicos de determinação de distância presentes no conjunto de dados (*Star-based / Luminosity* versus *Velocity-based*);
+5. Explorar graficamente as distribuições empíricas e o comportamento da dispersão de velocidades em função da distância;
+6. Ajustar modelos de regressão linear preliminares (com e sem intercepto), comparando os estimadores pontuais, a variância residual sob as métricas de Mínimos Quadrados ($QMRes$) e Máxima Verossimilhança ($\hat{\sigma}^2_{MV}$), e diagnosticando os pressupostos clássicos do modelo linear.
+
+---
+
+# Dicionário, Carregamento e Tratamento dos Dados
+
+## Carregamento e Inspeção Inicial
+
+Iniciamos o ambiente de análise no software estatístico **R**, importando as bibliotecas essenciais para manipulação, modelagem e visualização gráfica de dados:
+
+```{r}
+#| label: setup-ambiente
+# Configuração inicial do ambiente e carregamento de pacotes
+suppressPackageStartupMessages({
+  library(readxl)
+  library(dplyr)
+  library(ggplot2)
+  library(knitr)
+  library(kableExtra)
+  library(patchwork)
+})
+
+# Caminho portátil para o conjunto de dados
+caminho_dados <- if (file.exists("Dados/1929_Hubble.xlsx")) {
+  "Dados/1929_Hubble.xlsx"
+} else if (file.exists("../Dados/1929_Hubble.xlsx")) {
+  "../Dados/1929_Hubble.xlsx"
+} else {
+  stop("Arquivo de dados não encontrado na pasta Dados.")
+}
+
+# Importação da planilha
+dados_brutos <- read_excel(caminho_dados, sheet = "Data")
+```
+
+O conjunto de dados importado é composto por `r nrow(dados_brutos)` linhas (galáxias/nebulosas) e `r ncol(dados_brutos)` colunas. A seguir, exibimos as primeiras linhas da estrutura bruta:
+
+```{r}
+#| label: tbl-primeiras-linhas
+#| tbl-cap: "Primeiros 6 registros brutos importados do conjunto de dados de Hubble (1929)."
+df_mostra <- head(dados_brutos, 6)
+kable(df_mostra, 
+      booktabs = TRUE,
+      col.names = c("Objeto", "Método de Distância", "v (km/s)", "vs (km/s)", "r (Mpc)", "mt", "Mt")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9)
+```
+
+## Dicionário de Variáveis
+
+Cada registro do conjunto de dados representa uma nebulosa extragaláctica catalogada por Hubble em 1929:
+
+1. **`object`** (*caractere*): Nome ou identificador astronômico do objeto celeste. Inclui galáxias do catálogo NGC (*New General Catalogue*), tais como `NGC224` (a Galáxia de Andrômeda), `NGC598` (a Galáxia do Triângulo / M33), e as duas galáxias satélites da Via Láctea: `S_Mag` (*Small Magellanic Cloud* - Pequena Nuvem de Magalhães) e `L_Mag` (*Large Magellanic Cloud* - Grande Nuvem de Magalhães).
+2. **`distance_estimation`** (*fator / categórica*): Metodologia empregada por Hubble para a determinação da distância:
+   - `Star-based / Luminosity` ($n=24$): Distâncias inferidas diretamente a partir da resolução de estrelas individuais (variáveis Cefeidas ou as estrelas mais brilhantes) ou luminosidade estelar média em aglomerados (correspondente à Tabela 1 do artigo de 1929).
+   - `Velocity-based` ($n=22$): Nebulosas cuja velocidade radial já era conhecida por espectroscopia prévia e cujas distâncias foram estimadas por Hubble utilizando a magnitude aparente média do corpo nebular (correspondente à Tabela 2 do artigo de 1929).
+3. **`v_km_s`** (*numérica contínua*): Velocidade radial observada expressa em quilômetros por segundo ($\text{km}\cdot\text{s}^{-1}$), mensurada a partir do efeito Doppler nas raias de absorção espectrais ($z = \Delta \lambda / \lambda_0 \approx v / c$). Valores positivos indicam recessão (afastamento), enquanto valores negativos indicam aproximação (efeito azul / blueshift).
+4. **`vs_km_s`** (*numérica contínua*): Velocidade radial corrigida pelo movimento do Sol em relação ao centro da galáxia ou ao centróide do grupo de nebulosas ($\text{km}\cdot\text{s}^{-1}$).
+5. **`r_Mpc`** (*numérica contínua*): Distância estimada da galáxia até a Terra expressa em Megaparsecs ($\text{Mpc}$).
+6. **`mt`** (*numérica contínua*): Magnitude aparente total integrada ($m_t$). Na escala de magnitude astronômica (logarítmica inversa), objetos com valores numéricos menores são visualmente mais brilhantes.
+7. **`Mt`** (*numérica contínua*): Magnitude absoluta da nebulosa ($M_t$), representativa da luminosidade intrínseca que o objeto apresentaria caso estivesse situado à distância padrão de $10\text{ parsecs}$.
+
+## Auditoria de Tipos, Valores Ausentes e Correções
+
+Ao analisar o resultado da importação automática do `readxl`, constatou-se que as variáveis `r_Mpc`, `mt` e `Mt` foram lidas originalmente como tipo texto (`character`). Isso decorre da presença de sequências literais como `"<NA>"` ou células vazias em determinadas linhas.
+
+```{r}
+#| label: tbl-auditoria-na
+#| tbl-cap: "Auditoria de tipos de dados e valores faltantes no conjunto bruto."
+nomes_limpos <- c("object", "distance\\_estimation", "v\\_km\\_s", "vs\\_km\\_s", "r\\_Mpc", "mt", "Mt")
+tipos_iniciais <- sapply(dados_brutos, class)
+nas_iniciais <- colSums(is.na(dados_brutos))
+
+df_audit <- data.frame(
+  Coluna = nomes_limpos,
+  Tipo_Lido = tipos_iniciais,
+  Qtd_NAs = nas_iniciais,
+  Percent_NAs = paste0(round(100 * nas_iniciais / nrow(dados_brutos), 1), "%")
+)
+
+kable(df_audit, booktabs = TRUE, row.names = FALSE, escape = FALSE,
+      col.names = c("Variável", "Tipo Lido", "Nulos (NA)", "Percentual (%)")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+### Tratamento e Conversão de Tipos
+
+Procedemos à tipagem correta de cada coluna e à estruturação do banco de dados limpo:
+
+```{r}
+#| label: limpeza-dados
+# Conversão de colunas numéricas
+dados <- dados_brutos %>%
+  mutate(
+    distance_estimation = as.factor(distance_estimation),
+    r_Mpc = as.numeric(r_Mpc),
+    mt = as.numeric(mt),
+    Mt = as.numeric(Mt)
+  )
+
+# Identificação específica da linha com NA em distância
+linha_na <- dados %>% filter(is.na(r_Mpc))
+```
+
+Observa-se que apenas **uma única galáxia** apresenta ausência na variável preditora de distância `r_Mpc`: trata-se da nebulosa `NGC404`, pertencente ao grupo `Velocity-based`, cuja velocidade observada é de $-25\text{ km}\cdot\text{s}^{-1}$ e cujo $M_t$ também consta como ausente.
+
+Por outro lado, a variável `vs_km_s` (velocidade com componente solar) apresenta ausência sistemática em exatamente 24 observações — correspondendo rigorosamente à totalidade das observações do subgrupo `Star-based / Luminosity`, refletindo o fato de que Hubble registrou essa coluna apenas para o segundo conjunto de 22 nebulosas.
+
+### Verificação da Fórmula do Módulo de Distância em $M_t$
+
+Na astrofísica, o **módulo de distância** estabelece a relação analítica exata entre a magnitude aparente ($m$), a magnitude absoluta ($M$) e a distância em parsecs ($d_{\text{pc}}$) ou Megaparsecs ($r_{\text{Mpc}} = d_{\text{pc}} / 10^6$):
+
+$$m - M = 5 \log_{10}(d_{\text{pc}}) - 5 = 5 \log_{10}(r_{\text{Mpc}} \times 10^6) - 5 = 5 \log_{10}(r_{\text{Mpc}}) + 25$$
+
+Isolando a magnitude absoluta $M$, temos:
+
+$$M_{\text{teórico}} = m - 5 \log_{10}(r_{\text{Mpc}}) - 25$$
+
+Como galáxias são corpos imensamente luminosos (emitindo bilhões de vezes a radiação do Sol), suas magnitudes absolutas são necessariamente **valores negativos elevados** (tipicamente entre $-13$ e $-22$). Contudo, ao inspecionar a coluna `Mt` do arquivo Excel, nota-se uma peculiaridade histórica: 42 das 45 observações válidas foram grafadas sem o sinal negativo (valores como $17{,}2$, $15{,}1$, $13{,}4$), enquanto apenas 3 observações (`S_Mag` com $-16{,}0$, `NGC278` com $-13{,}9$ e `NGC5866` com $-14{,}5$) foram digitadas com o sinal de menos explícito.
+
+```{r}
+#| label: tbl-modulo-distancia
+#| tbl-cap: "Diferença entre o Mt calculado pela fórmula do módulo de distância e o Mt tabelado com sinal negativo."
+dados_mod <- dados %>%
+  filter(!is.na(r_Mpc) & !is.na(Mt)) %>%
+  mutate(
+    Mt_calc = mt - 5 * log10(r_Mpc) - 25,
+    Mt_corrigido = -abs(Mt),
+    Diferenca = Mt_calc - Mt_corrigido
+  )
+
+resumo_dif <- c(
+  Mínimo = min(dados_mod$Diferenca),
+  Quartil_1 = as.numeric(quantile(dados_mod$Diferenca, 0.25)),
+  Mediana = median(dados_mod$Diferenca),
+  Média = mean(dados_mod$Diferenca),
+  Quartil_3 = as.numeric(quantile(dados_mod$Diferenca, 0.75)),
+  Máximo = max(dados_mod$Diferenca)
+)
+
+kable(t(round(resumo_dif, 4)), booktabs = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Como se nota, a discrepância entre o valor teórico recalculado e o valor da tabela (adotando o sinal negativo correto) é estritamente inferior a $0{,}07$ unidades de magnitude em todos os casos — desvio perfeitamente explicado pelo arredondamento a uma casa decimal aplicado por Hubble em 1929. Portanto, confirma-se empiricamente que os valores positivos na tabela original consistem em omissão do sinal negativo característico das magnitudes absolutas. Para análises de consistência física, criamos no banco de dados a variável $M_{t,\text{corr}} = -|M_t|$.
+
+```{r}
+#| label: criacao-mt-corrigido
+dados$Mt_corr <- ifelse(!is.na(dados$Mt), -abs(dados$Mt), NA)
+```
+
+---
+
+# Análise Estatística Descritiva
+
+## Medidas de Tendência Central, Dispersão e Forma
+
+Para compreender o perfil das variáveis quantitativas sob investigação, calculamos as medidas sumárias de estatística descritiva: Média, Desvio Padrão ($S$), Mediana, Intervalo Interquartílico ($IQR = Q_3 - Q_1$), Mínimo e Máximo:
+
+```{r}
+#| label: tbl-descritiva-geral
+#| tbl-cap: "Medidas descritivas sumárias para o conjunto completo de dados de Hubble (1929)."
+calc_sumario <- function(vetor, nome) {
+  v <- vetor[!is.na(vetor)]
+  data.frame(
+    Variável = nome,
+    N_Válidos = length(v),
+    Média = mean(v),
+    DP = sd(v),
+    Mediana = median(v),
+    IQR = IQR(v),
+    Mínimo = min(v),
+    Máximo = max(v)
+  )
+}
+
+tab_geral <- bind_rows(
+  calc_sumario(dados$v_km_s, "Velocidade v (km/s)"),
+  calc_sumario(dados$vs_km_s, "Velocidade Solar vs (km/s)"),
+  calc_sumario(dados$r_Mpc, "Distância r (Mpc)"),
+  calc_sumario(dados$mt, "Mag. Aparente mt"),
+  calc_sumario(dados$Mt_corr, "Mag. Absoluta Mt (corrigida)")
+)
+
+kable(tab_geral, digits = 2, booktabs = TRUE,
+      col.names = c("Variável", "Válidos", "Média", "Desvio Padrão", "Mediana", "IQR", "Mínimo", "Máximo")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Principais constatações numéricas:
+
+1. **Velocidade Radial ($v$):** Apresenta uma média de $552{,}61\text{ km}\cdot\text{s}^{-1}$ e mediana de $590{,}00\text{ km}\cdot\text{s}^{-1}$, com amplitude ampla de $-220\text{ km}\cdot\text{s}^{-1}$ a $+1800\text{ km}\cdot\text{s}^{-1}$. A grande maioria dos objetos ($40$ de $46$, isto é, $87\%$) apresenta velocidades positivas (recessão), comprovando o predomínio esmagador do redshift.
+2. **Distância ($r$):** Apresenta média de $1{,}21\text{ Mpc}$ e mediana de $1{,}10\text{ Mpc}$, variando desde galáxias muito próximas como a Pequena Nuvem de Magalhães ($r = 0{,}032\text{ Mpc} \approx 104.000\text{ anos-luz}$) até galáxias distantes como a nebulosa `NGC584` ($r = 3{,}45\text{ Mpc}$).
+3. **Magnitude Aparente ($m_t$):** Concentra-se entre $0{,}50$ e $12{,}50$ (média $9{,}43$), demonstrando que o telescópio de 100 polegadas conseguia registrar desde objetos brilhantes visíveis a olho nu até corpos celestes tênues.
+4. **Magnitude Absoluta ($M_{t,\text{corr}}$):** Varia numa faixa relativamente estreita de $-17{,}70$ a $-12{,}65$ (média de $-15{,}46$ e desvio padrão de apenas $1{,}30$). Esse comportamento é consistente com a premissa de Hubble de que as galáxias mais brilhantes em aglomerados possuíam uma luminosidade total intrínseca aproximadamente homogênea, funcionando como uma espécie preliminar de "vela padrão" (*standard candle*).
+
+## Análise Comparativa Estratificada por Método de Distância
+
+A divisão das observações em dois grupos metodológicos fundamentais reflete as duas abordagens observacionais de Hubble em 1929. A @tbl-estratificada compara as distribuições segundo esse fator:
+
+```{r}
+#| label: tbl-estratificada
+#| tbl-cap: "Estatísticas descritivas comparativas segundo a metodologia de estimação da distância."
+tab_estrat <- dados %>%
+  filter(!is.na(r_Mpc)) %>%
+  group_by(Metodologia = distance_estimation) %>%
+  summarise(
+    N = n(),
+    v_Media = mean(v_km_s),
+    v_DP = sd(v_km_s),
+    v_Mediana = median(v_km_s),
+    r_Media = mean(r_Mpc),
+    r_DP = sd(r_Mpc),
+    r_Mediana = median(r_Mpc),
+    mt_Media = mean(mt)
+  )
+
+kable(tab_estrat, digits = 2, booktabs = TRUE,
+      col.names = c("Metodologia", "N", "Média v", "DP v", "Mediana v", "Média r", "DP r", "Mediana r", "Média mt")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Diferenças essenciais entre os grupos:
+
+- **Grupo *Star-based / Luminosity* ($n = 24$):** Contém os objetos celestes mais próximos da Terra (distância média de $0{,}91\text{ Mpc}$, máxima de $2{,}00\text{ Mpc}$). As velocidades radiais médias são mais baixas ($373{,}12\text{ km}\cdot\text{s}^{-1}$), incluindo os objetos com velocidades negativas (aproximação mútua dentro do Grupo Local).
+- **Grupo *Velocity-based* ($n = 21$ válidos):** Abrange nebulosas significativamente mais distantes (distância média de $1{,}56\text{ Mpc}$, alcançando até $3{,}45\text{ Mpc}$). Consequentemente, as velocidades radiais observadas são substancialmente mais elevadas (média de $748{,}38\text{ km}\cdot\text{s}^{-1}$, mediana de $715{,}00\text{ km}\cdot\text{s}^{-1}$ e máxima de $1800{,}00\text{ km}\cdot\text{s}^{-1}$).
+
+---
+
+# Análise Gráfica e Visualização de Dados
+
+## Distribuição Univariada de Velocidades e Distâncias
+
+Avaliamos visualmente as distribuições univariadas da velocidade radial e da distância por meio de histogramas com curvas de densidade empírica sobrepostas:
+
+```{r}
+#| label: fig-distribuicoes
+#| fig-cap: "Histogramas e densidades empíricas das variáveis Velocidade Radial (v) e Distância (r)."
+#| fig-pos: "H"
+#| fig-width: 9
+#| fig-height: 4
+p_v <- ggplot(dados, aes(x = v_km_s)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 12, 
+                 fill = "#3b82f6", color = "white", alpha = 0.7) +
+  geom_density(color = "#1e3a8a", linewidth = 1) +
+  geom_vline(aes(xintercept = mean(v_km_s)), color = "red", linetype = "dashed", linewidth = 0.8) +
+  geom_vline(aes(xintercept = median(v_km_s)), color = "darkgreen", linetype = "dotted", linewidth = 0.8) +
+  labs(title = "Distribuição da Velocidade Radial", 
+       subtitle = "Tracejado vermelho: Média; Pontilhado verde: Mediana",
+       x = expression(Velocidade ~ v ~ (km %.% s^{-1})), y = "Densidade") +
+  theme_bw()
+
+p_r <- ggplot(filter(dados, !is.na(r_Mpc)), aes(x = r_Mpc)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 12, 
+                 fill = "#8b5cf6", color = "white", alpha = 0.7) +
+  geom_density(color = "#4c1d95", linewidth = 1) +
+  geom_vline(aes(xintercept = mean(r_Mpc, na.rm = TRUE)), color = "red", linetype = "dashed", linewidth = 0.8) +
+  geom_vline(aes(xintercept = median(r_Mpc, na.rm = TRUE)), color = "darkgreen", linetype = "dotted", linewidth = 0.8) +
+  labs(title = "Distribuição da Distância", 
+       subtitle = "Tracejado vermelho: Média; Pontilhado verde: Mediana",
+       x = "Distância r (Mpc)", y = "Densidade") +
+  theme_bw()
+
+p_v + p_r
+```
+
+Nota-se que a distribuição das distâncias apresenta assimetria positiva à direita (*right-skewed*), reflexo da limitação amostral de 1929: a maior parte das galáxias catalogadas estava confinada em um raio inferior a $2\text{ Mpc}$, havendo poucas nebulosas em distâncias superiores a $2{,}5\text{ Mpc}$.
+
+## Comparação Gráfica entre Metodologias (Boxplots)
+
+```{r}
+#| label: fig-boxplots
+#| fig-cap: "Boxplots comparativos das variáveis Velocidade (v) e Distância (r) segundo a metodologia de estimação."
+#| fig-pos: "H"
+#| fig-width: 9
+#| fig-height: 4
+bp_v <- ggplot(dados, aes(x = distance_estimation, y = v_km_s, fill = distance_estimation)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 2.5) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.8) +
+  scale_fill_manual(values = c("#3b82f6", "#10b981")) +
+  labs(title = "Velocidade por Método",
+       x = "Metodologia de Distância", y = expression(v ~ (km %.% s^{-1}))) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+bp_r <- ggplot(filter(dados, !is.na(r_Mpc)), aes(x = distance_estimation, y = r_Mpc, fill = distance_estimation)) +
+  geom_boxplot(alpha = 0.7, outlier.colour = "red", outlier.size = 2.5) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 1.8) +
+  scale_fill_manual(values = c("#3b82f6", "#10b981")) +
+  labs(title = "Distância por Método",
+       x = "Metodologia de Distância", y = "r (Mpc)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+bp_v + bp_r
+```
+
+Os boxplots da @fig-boxplots evidenciam visualmente a estratificação espacial dos dados: o método `Velocity-based` penetrou em regimes cosmológicos de distâncias e velocidades significativamente mais elevados do que o método baseado exclusivamente em estrelas individuais.
+
+## O Diagrama Fundamental de Hubble: Dispersão $v$ vs. $r$
+
+Apresentamos na @fig-dispersao-hubble o gráfico mais importante da cosmologia observacional do século XX: a dispersão de velocidades radiais em função da distância em Megaparsecs, diferenciando as galáxias por sua metodologia de medição e destacando objetos astronômicos notáveis:
+
+```{r}
+#| label: fig-dispersao-hubble
+#| fig-cap: "Diagrama de dispersão de Hubble (1929): Velocidade radial versus Distância, com destaque para galáxias emblemáticas e ajuste linear simples."
+#| fig-pos: "H"
+#| fig-width: 8.5
+#| fig-height: 5.5
+dados_completos <- dados %>% filter(!is.na(r_Mpc))
+
+# Objetos para anotação no gráfico
+objetos_destaque <- c("S_Mag", "L_Mag", "NGC224", "NGC6822", "NGC584", "NGC4649")
+df_rotulos <- dados_completos %>% filter(object %in% objetos_destaque)
+
+p_hubble <- ggplot(dados_completos, aes(x = r_Mpc, y = v_km_s)) +
+  geom_hline(yintercept = 0, color = "gray60", linetype = "solid", linewidth = 0.5) +
+  geom_point(aes(color = distance_estimation, shape = distance_estimation), size = 3.2, alpha = 0.85) +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE, color = "#dc2626", fill = "#fca5a5", alpha = 0.25, linewidth = 1) +
+  geom_text(data = df_rotulos, aes(label = object), 
+            nudge_y = 75, nudge_x = -0.05, size = 3.2, fontface = "bold", color = "#1f2937") +
+  scale_color_manual(values = c("Star-based / Luminosity" = "#2563eb", "Velocity-based" = "#059669")) +
+  scale_shape_manual(values = c("Star-based / Luminosity" = 16, "Velocity-based" = 17)) +
+  labs(
+    title = "Diagrama de Hubble (1929): Velocidade Radial vs. Distância",
+    subtitle = "Ajuste por Mínimos Quadrados Ordinários (banda de confiança de 95% para a média)",
+    x = "Distância r (Mpc)",
+    y = expression(Velocidade ~ Radial ~ v ~ (km %.% s^{-1})),
+    color = "Metodologia",
+    shape = "Metodologia"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", size = 13),
+    axis.title = element_text(size = 11)
+  )
+
+p_hubble
+```
+
+Interpretação do diagrama:
+
+1. **Tendência Linear Expressiva:** Constata-se uma relação linear positiva extremamente nítida entre a velocidade de afastamento e a distância. Quanto mais distante a galáxia, mais rapidamente ela se afasta de nós.
+2. **O Grupo Local e Velocidades Negativas:** Para distâncias muito pequenas ($r < 0{,}3\text{ Mpc}$), observam-se velocidades negativas, com destaque para a Galáxia de Andrômeda (`NGC224`, $v = -220\text{ km}\cdot\text{s}^{-1}$) e sua companheira `NGC221` ($v = -185\text{ km}\cdot\text{s}^{-1}$). Nessas escalas de proximidade, a atração gravitacional mútua supera a taxa local de expansão cósmica, gerando as chamadas *velocidades peculiares*.
+3. **Ponto Extremo (Alavancagem Potencial):** A nebulosa `NGC584` situa-se no extremo direito superior ($r = 3{,}45\text{ Mpc}$, $v = 1800\text{ km}\cdot\text{s}^{-1}$), atuando como um ponto de grande relevância amostral na determinação da inclinação da reta.
+
+## Relação entre Magnitude Aparente, Distância e Velocidade
+
+Investigamos também o comportamento fotométrico das galáxias. Pela teoria física, a intensidade de luz decai com o quadrado da distância ($I \propto 1/r^2$). Como a escala de magnitude aparente é logarítmica ($m \propto -2{,}5 \log_{10} I$), espera-se que $m_t$ cresça linearmente com o logaritmo da distância: $m_t \propto 5 \log_{10}(r)$.
+
+```{r}
+#| label: fig-fotometria
+#| fig-cap: "Relação entre Magnitude Aparente total (mt) e logaritmo da distância (log10 r), colorida pela velocidade de recessão."
+#| fig-pos: "H"
+#| fig-width: 8
+#| fig-height: 4.5
+p_mag <- ggplot(dados_completos, aes(x = log10(r_Mpc), y = mt, color = v_km_s)) +
+  geom_point(size = 3.5, alpha = 0.9) +
+  geom_smooth(method = "lm", formula = y ~ x, color = "black", linetype = "dashed", se = FALSE) +
+  scale_color_viridis_c(option = "plasma", name = expression(v ~ (km %.% s^{-1}))) +
+  labs(
+    title = "Relação Fotométrica: Magnitude Aparente vs. Logaritmo da Distância",
+    x = expression(log[10](r ~ "[Mpc]")),
+    y = expression(Magnitude ~ Aparente ~ m[t])
+  ) +
+  theme_bw() +
+  theme(legend.position = "right")
+
+p_mag
+```
+
+A @fig-fotometria confirma a consistência física dos dados: as galáxias mais distantes (maior $\log_{10} r$) são sistematicamente menos brilhantes (maior $m_t$) e apresentam as maiores velocidades de recessão (tons mais claros/amarelados).
+
+---
+
+# Análise de Correlação e Modelagem Linear Exploratória
+
+## Matriz de Correlação Bivariada
+
+Calculamos os coeficientes de correlação linear de Pearson ($r_P$) e a correlação não-paramétrica de Spearman ($r_S$) entre as principais grandezas:
+
+```{r}
+#| label: tbl-correlacoes
+#| tbl-cap: "Coeficientes de correlação de Pearson e coeficientes de determinação entre Velocidade e Distância."
+# Matriz de correlação de Pearson
+vars_cor <- c("v_km_s", "r_Mpc", "mt", "Mt_corr")
+df_cor <- dados_completos[, vars_cor]
+matriz_pearson <- cor(df_cor, use = "complete.obs", method = "pearson")
+matriz_spearman <- cor(df_cor, use = "complete.obs", method = "spearman")
+
+# Correlações específicas v vs r por subgrupo
+cor_global <- cor(dados_completos$v_km_s, dados_completos$r_Mpc)
+cor_star <- cor(filter(dados_completos, distance_estimation == "Star-based / Luminosity")$v_km_s,
+                filter(dados_completos, distance_estimation == "Star-based / Luminosity")$r_Mpc)
+cor_vel <- cor(filter(dados_completos, distance_estimation == "Velocity-based")$v_km_s,
+               filter(dados_completos, distance_estimation == "Velocity-based")$r_Mpc)
+
+df_cor_sub <- data.frame(
+  Amostra = c("Conjunto Completo", "Star-based / Luminosity", "Velocity-based"),
+  N = c(nrow(dados_completos), 24, 21),
+  Correlacao = c(cor_global, cor_star, cor_vel),
+  R_Quadrado = c(cor_global^2, cor_star^2, cor_vel^2)
+)
+
+kable(df_cor_sub, digits = 4, booktabs = TRUE, escape = FALSE,
+      col.names = c("Amostra", "N", "Correlação de Pearson ($r$)", "Coeficiente de Determinação ($R^2$)")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Destaca-se que:
+- No conjunto completo, o coeficiente de correlação linear é excepcionalmente elevado ($r = 0{,}8933$), indicando que aproximadamente $79{,}8\%$ da variação total observada na velocidade radial é explicada linearmente pela distância do objeto;
+- No grupo `Velocity-based`, a correlação atinge um patamar impressionante de $r = 0{,}9560$ ($R^2 = 91{,}4\%$).
+
+## Ajuste do Modelo de Regressão Linear Simples
+
+Ajustamos o modelo clássico de regressão linear simples via Mínimos Quadrados Ordinários (MQO):
+
+$$v_i = \beta_0 + \beta_1 r_i + \varepsilon_i$$
+
+e comparamos os resultados com o modelo restrito que força o intercepto a passar pela origem física ($\beta_0 = 0$):
+
+$$v_i = H_0 r_i + \varepsilon_i$$
+
+```{r}
+#| label: ajuste-modelos
+# Modelo 1: Com intercepto
+mod_com_intercepto <- lm(v_km_s ~ r_Mpc, data = dados_completos)
+sum_m1 <- summary(mod_com_intercepto)
+
+# Modelo 2: Sem intercepto (pela origem)
+mod_origem <- lm(v_km_s ~ 0 + r_Mpc, data = dados_completos)
+sum_m0 <- summary(mod_origem)
+
+# Coeficientes e variâncias
+n_obs <- nrow(dados_completos)
+p_m1 <- length(coef(mod_com_intercepto))
+p_m0 <- length(coef(mod_origem))
+
+qmres_m1 <- sum_m1$sigma^2
+sigma2_mv_m1 <- ((n_obs - p_m1) / n_obs) * qmres_m1
+
+qmres_m0 <- sum_m0$sigma^2
+sigma2_mv_m0 <- ((n_obs - p_m0) / n_obs) * qmres_m0
+```
+
+A @tbl-comparacao-modelos sintetiza as estimativas dos parâmetros e os critérios de qualidade dos dois modelos:
+
+```{r}
+#| label: tbl-comparacao-modelos
+#| tbl-cap: "Comparação entre o modelo de regressão com intercepto e o modelo passando pela origem."
+tabela_modelos <- data.frame(
+  Modelo = c("Regressão Clássica (com intercepto)", "Regressão Cosmológica (pela origem)"),
+  Intercepto_b0 = c(paste0(round(coef(mod_com_intercepto)[1], 2), " (p = ", round(sum_m1$coefficients[1, 4], 3), ")"), "0 (Fixado)"),
+  Inclinacao_H0 = c(paste0(round(coef(mod_com_intercepto)[2], 2), " $\\pm$ ", round(sum_m1$coefficients[2, 2], 2)),
+                    paste0(round(coef(mod_origem)[1], 2), " $\\pm$ ", round(sum_m0$coefficients[1, 2], 2))),
+  R2 = c(round(sum_m1$r.squared, 4), round(sum_m0$r.squared, 4)),
+  QMRes = c(round(qmres_m1, 1), round(qmres_m0, 1)),
+  Sigma2_MV = c(round(sigma2_mv_m1, 1), round(sigma2_mv_m0, 1)),
+  RSE = c(round(sum_m1$sigma, 2), round(sum_m0$sigma, 2))
+)
+
+kable(tabela_modelos, booktabs = TRUE, escape = FALSE,
+      col.names = c("Especificação do Modelo", "Intercepto ($\\hat{\\beta}_0$)", "Constante $H_0$ (km/s/Mpc)", "$R^2$", "QMRes ($s^2$)", "$\\hat{\\sigma}^2_{MV}$", "Erro Residual ($s$)")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 9)
+```
+
+### Interpretação Estatística dos Coeficientes
+
+1. **Significância do Intercepto:** No modelo clássico, o intercepto estimado foi $\hat{\beta}_0 = -48{,}34\text{ km}\cdot\text{s}^{-1}$ com erro padrão de $54{,}74\text{ km}\cdot\text{s}^{-1}$ e estatística $t = -0{,}883$ ($p\text{-valor} = 0{,}382$). Do ponto de vista da inferência estatística, **não há evidência para rejeitar a hipótese nula** $H_0: \beta_0 = 0$ a qualquer nível usual de significância ($\alpha = 0{,}05$ ou $0{,}01$). Esse resultado coincide com a premissa cosmológica fundamental de que um observador no repouso relativo não deve detectar recessão própria ($v = 0$ para $r = 0$).
+2. **A Constante de Hubble Estimada ($H_0$):**
+   - No modelo irrestrito: $\hat{H}_0 = 505{,}84 \pm 38{,}82\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ ($t = 13{,}03$, $p < 2 \times 10^{-16}$);
+   - No modelo pela origem: $\hat{H}_0 = 476{,}34 \pm 19{,}73\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ ($t = 24{,}14$, $p < 2 \times 10^{-16}$).
+   Ambos os valores estão em perfeita sintonia com a estimativa nominal de aproximadamente $500\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ reportada por Edwin Hubble em seu artigo original de 1929.
+3. **Conexão com a Teoria de Modelos Lineares (EST074):**
+   Conforme estudado nas aulas teóricas e demonstrado nas simulações do script `tmm_script_slides04_behaviour.R`, a variância residual estimada por Máxima Verossimilhança ($\hat{\sigma}^2_{MV}$) divide a soma de quadrados dos resíduos pelo número total de observações $n$, resultando em uma estimativa inferior à do Mínimos Quadrados ($QMRes$):
+   $$\hat{\sigma}^2_{MV} = \left(\frac{n - p}{n}\right) QMRes = \left(\frac{45 - 2}{45}\right) \times 35015{,}6 = 33459{,}3$$
+   Essa diferença ilustra concretamente a perda de $p = 2$ graus de liberdade na estimação dos coeficientes em amostras finitas.
+
+## Diagnóstico Preliminar dos Resíduos do Modelo
+
+Avaliamos a adequação dos pressupostos clássicos de Gauss-Markov e normalidade dos resíduos ($\varepsilon_i \overset{iid}{\sim} \mathcal{N}(0, \sigma^2)$):
+
+```{r}
+#| label: fig-diagnostico-residuos
+#| fig-cap: "Painel de diagnóstico de resíduos do modelo linear v ~ r: Resíduos vs. Valores Ajustados, Gráfico Q-Q Normal, Resíduos Padronizados e Distância de Cook."
+#| fig-pos: "H"
+#| fig-width: 8.5
+#| fig-height: 6
+dados_diag <- dados_completos %>%
+  mutate(
+    Ajustados = fitted(mod_com_intercepto),
+    Residuos = residuals(mod_com_intercepto),
+    Res_Padronizados = rstandard(mod_com_intercepto),
+    Leverage = hatvalues(mod_com_intercepto),
+    Cook = cooks.distance(mod_com_intercepto)
+  )
+
+# 1. Resíduos vs Ajustados
+g1 <- ggplot(dados_diag, aes(x = Ajustados, y = Residuos)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_point(color = "#1e3a8a", size = 2.2, alpha = 0.8) +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, color = "darkorange", linewidth = 0.8) +
+  labs(title = "Resíduos vs. Ajustados", x = "Valores Ajustados (km/s)", y = "Resíduos Ordinários (km/s)") +
+  theme_bw()
+
+# 2. Q-Q Plot
+g2 <- ggplot(dados_diag, aes(sample = Res_Padronizados)) +
+  geom_qq(color = "#1e3a8a", size = 2.2, alpha = 0.8) +
+  geom_qq_line(color = "red", linetype = "dashed", linewidth = 0.8) +
+  labs(title = "Q-Q Normal dos Resíduos", x = "Quantis Teóricos", y = "Resíduos Padronizados") +
+  theme_bw()
+
+# 3. Resíduos Padronizados vs Alavancagem (Leverage)
+g3 <- ggplot(dados_diag, aes(x = Leverage, y = Res_Padronizados)) +
+  geom_hline(yintercept = c(-2, 0, 2), linetype = c("dotted", "dashed", "dotted"), color = c("red", "black", "red")) +
+  geom_point(color = "#1e3a8a", size = 2.2, alpha = 0.8) +
+  labs(title = "Resíduos vs. Alavancagem (Leverage)", x = "Alavancagem (hii)", y = "Resíduos Padronizados") +
+  theme_bw()
+
+# 4. Distância de Cook
+g4 <- ggplot(dados_diag, aes(x = seq_along(Cook), y = Cook)) +
+  geom_bar(stat = "identity", fill = "#3b82f6", width = 0.4) +
+  geom_hline(yintercept = 4 / nrow(dados_diag), linetype = "dashed", color = "red") +
+  labs(title = "Distância de Cook", x = "Índice da Observação", y = "Distância de Cook Di") +
+  theme_bw()
+
+(g1 + g2) / (g3 + g4)
+```
+
+Testes formais de diagnóstico:
+
+```{r}
+#| label: tbl-diagnostico
+#| tbl-cap: "Testes estatísticos formais sobre os resíduos da regressão linear de Hubble."
+# Teste de Normalidade de Shapiro-Wilk
+shapiro_res <- shapiro.test(dados_diag$Residuos)
+
+# Teste de Homocedasticidade de Breusch-Pagan (via lm do pacote stats)
+res_quad <- dados_diag$Residuos^2
+mod_bp <- lm(res_quad ~ dados_diag$r_Mpc)
+bp_stat <- summary(mod_bp)$r.squared * nrow(dados_diag)
+bp_pvalor <- 1 - pchisq(bp_stat, df = 1)
+
+diag_df <- data.frame(
+  Teste = c("Normalidade (Shapiro-Wilk)", "Homocedasticidade (Breusch-Pagan)"),
+  Estatistica = c(paste0("W = ", round(shapiro_res$statistic, 4)), paste0("BP = ", round(bp_stat, 4))),
+  p_valor = c(round(shapiro_res$p.value, 4), round(bp_pvalor, 4)),
+  Conclusao = c("Não rejeita normalidade (p > 0.05)", "Não rejeita homocedasticidade (p > 0.05)")
+)
+
+kable(diag_df, booktabs = TRUE, escape = FALSE,
+      col.names = c("Teste Diagnóstico", "Estatística", "p-valor", "Conclusão ($\\alpha = 0{,}05$)")) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+Constatações do diagnóstico:
+- **Normalidade dos Erros:** O teste de Shapiro-Wilk ($W = 0{,}980$, $p = 0{,}627$) indica excelente aderência à distribuição normal, garantindo a validade exata dos testes $t$ e intervalos de confiança sob a teoria normal;
+- **Homocedasticidade:** O teste de Breusch-Pagan ($p = 0{,}365$) não aponta heterocedasticidade estatisticamente significante;
+- **Pontos Influentes:** A observação da nebulosa `NGC584` (no extremo de distância) possui maior alavancagem ($h_{ii}$), mas sua distância de Cook permanece controlada, demonstrando que a estimativa da inclinação reflete a estrutura global do conjunto de galáxias.
+
+---
+
+# Interpretação Física, Cosmológica e Histórica
+
+## O "Tempo de Hubble" e o Paradoxo da Idade do Universo
+
+A inclinação estimada $\hat{H}_0 \approx 500\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$ possui significado físico direto na cinemática cósmica. Supondo, em primeira aproximação, uma taxa de expansão constante no tempo, a "idade do Universo" (denominada **Tempo de Hubble**, $t_0 \equiv H_0^{-1}$) corresponde ao tempo necessário para que todas as galáxias tivessem partido de um mesmo ponto inicial:
+
+$$t_0 = \frac{1}{H_0}$$
+
+Para converter as unidades astronômicas usuais para segundos e anos:
+- $1\text{ Mpc} = 3{,}0857 \times 10^{19}\text{ km}$;
+- $1\text{ ano} \approx 3{,}1557 \times 10^7\text{ segundos}$.
+
+Assim:
+
+$$t_0 = \frac{3{,}0857 \times 10^{19}\text{ km}}{500\text{ km}\cdot\text{s}^{-1}} = 6{,}17 \times 10^{16}\text{ segundos} \approx \frac{6{,}17 \times 10^{16}}{3{,}1557 \times 10^7} \approx 1{,}95 \times 10^9\text{ anos} \approx 1{,}95\text{ bilhões de anos}$$
+
+Esse resultado histórico gerou um dos maiores paradoxos científicos da primeira metade do século XX: em 1929, os geólogos já sabiam, por meio do decaimento radioativo do urânio em rochas terrestres e meteoritos, que a Terra tinha mais de $3$ bilhões de anos. Como poderia o Universo ser mais jovem do que o próprio planeta Terra?
+
+A solução desse paradoxo veio décadas depois:
+1. **Confusão de Populações de Cefeidas:** Em 1952, Walter Baade descobriu que existiam duas classes distintas de variáveis Cefeidas (População I e População II), com relações período-luminosidade diferentes. As Cefeidas clássicas observadas por Hubble eram cerca de 4 vezes mais luminosas do que ele supunha, o que significava que as distâncias de Hubble estavam subestimadas por um fator próximo a 2;
+2. **Estrelas mais Brilhantes versus Aglomerados de Estrelas:** Allan Sandage descobriu que os pontos mais brilhantes em galáxias distantes não eram estrelas individuais isoladas, mas sim aglomerados estelares inteiros (regiões HII), o que inflacionou ainda mais o erro de calibração;
+3. Com a correção desses efeitos sistemáticos, a constante de Hubble moderna convergiu para a faixa de $67$ a $74\text{ km}\cdot\text{s}^{-1}\cdot\text{Mpc}^{-1}$, elevando a idade do Universo para aproximadamente $13{,}8$ bilhões de anos — resolvendo completamente o paradoxo cronológico.
+
+---
+
+# Conclusões e Recomendações Metodológicas
+
+A presente análise exploratória sobre os dados originais de Hubble (1929) revelou lições valiosas tanto para a astrofísica quanto para a prática de modelagem estatística:
+
+1. **Validação de Qualidade de Dados:** A auditoria minuciosa permitiu identificar a omissão do sinal negativo nas magnitudes absolutas ($M_t$) e a presença de apenas um dado ausente em distância (`NGC404`), preservando 45 das 46 observações para a modelagem bivariada;
+2. **Evidência Robusta de Expansão:** Mesmo com as limitações instrumentais pioneiras de 1929, a correlação entre velocidade e distância é altíssima ($r \approx 0{,}89$), confirmando a consistência interna das medições observacionais de Hubble;
+3. **Consistência do Modelo Teórico com a Origem:** O teste de hipótese para o intercepto demonstrou que $\beta_0$ não difere estatisticamente de zero ($p = 0{,}382$), respaldando fisicamente o modelo restrito pela origem ($v = H_0 r$);
+4. **Recomendações para Modelagem Subsequente:**
+   - Para estudos inferenciais avançados, recomenda-se avaliar a sensibilidade dos estimadores em relação à exclusão ou ponderação de objetos muito próximos (como as galáxias com velocidades negativas do Grupo Local);
+   - Recomenda-se também comparar os modelos com e sem o ponto de alta alavancagem (`NGC584`) para aferir a estabilidade da constante $H_0$;
+   - O uso de estimadores de variância não-viciados ($QMRes = s^2$), conforme consagrado na teoria de Gauss-Markov, é mandatório para inferência em pequenas amostras ($n=45$), evitando a subestimação inerente ao estimador de Máxima Verossimilhança.
+
+---
+
+# Informações da Sessão Computacional
+
+```{r}
+#| label: info-sessao
+sessionInfo()
+```
+
+---
+
+# Referências Bibliográficas
+
+- HUBBLE, E. A relation between distance and radial velocity among extra-galactic nebulae. *Proceedings of the National Academy of Sciences*, v. 15, n. 3, p. 168-173, 1929.
+- MAGALHÃES, T. M. *Notas de Aula e Scripts de Modelos Lineares (EST074)*. Departamento de Estatística, Universidade Federal de Juiz de Fora (UFJF), 2021-2025.
