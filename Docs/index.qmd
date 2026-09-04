@@ -1,0 +1,497 @@
+---
+title: "Análise Didática dos Scripts de Modelos Lineares"
+subtitle: "Avaliação do Comportamento de Estimadores e Aplicações Práticas (EST074)"
+author: "Docente / Monitoria de Modelos Lineares"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-title: "Sumário"
+    toc-depth: 3
+    number-sections: true
+    code-fold: show
+    code-tools: true
+    code-line-numbers: true
+    theme: cosmo
+    highlight-style: github
+    fig-width: 8
+    fig-height: 5
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Introdução
+
+Este documento apresenta uma explicação didática, detalhada e estruturada dos scripts em **R** contidos na pasta `Scripts/` deste projeto:
+
+1. **`tmm_script_slides04_behaviour.R`**: Simulação de Monte Carlo para avaliar o comportamento amostral e as propriedades assintóticas dos estimadores de Mínimos Quadrados / Máxima Verossimilhança em modelos lineares.
+2. **`tmm_script_slides04_applications.R`**: Aplicações práticas de modelagem linear em dois conjuntos de dados clássicos:
+   - **Westwood**: Regressão linear simples (relação entre horas de trabalho e tamanho do lote).
+   - **Crickets**: Regressão linear múltipla com variável explicativa contínua e categórica (modelo de retas paralelas para taxa de pulsação sonora de duas espécies de grilos em função da temperatura).
+
+Ambos os scripts foram elaborados pelo Prof. Tiago M. Magalhães no contexto da disciplina de **Modelos Lineares / Algoritmos Estatísticos (EST074 - UFJF)**.
+
+---
+
+# Script 1: Comportamento dos Estimadores (`tmm_script_slides04_behaviour.R`)
+
+## Objetivo e Fundamentação Teórica
+
+O objetivo central deste script é responder a perguntas fundamentais da inferência estatística:
+
+> *Como os estimadores de parâmetros em regressão linear se comportam quando o tamanho da amostra ($n$) varia de muito pequeno ($n=10$) a moderadamente grande ($n=160$)? Eles são viciados? O erro quadrático médio e a variância diminuem conforme $n$ cresce?*
+
+### O Modelo Teórico
+
+Consideramos o modelo de regressão linear clássico:
+$$Y = X \beta + \varepsilon$$
+onde:
+- $Y$ é o vetor de respostas de dimensão $n \times 1$;
+- $X$ é a matriz de planejamento de dimensão $n \times p$ (com $p=2$, contendo a coluna de 1's para o intercepto e uma variável explicativa gerada uniformemente);
+- $\beta = (\beta_1, \beta_2)^T = (0.5, 0.5)^T$ é o vetor de parâmetros verdadeiros;
+- $\varepsilon \sim \mathcal{N}(0, \sigma^2 I_n)$ é o vetor de erros aleatórios normais, independentes e homoscedásticos com desvio padrão verdadeiro $\sigma = 0.1$ ($\sigma^2 = 0.01$).
+
+### Estimadores Avaliados
+
+Neste estudo, comparam-se quatro quantidades estimadas:
+
+1. **$\hat{\beta}_1$ e $\hat{\beta}_2$**: Estimadores de Mínimos Quadrados Ordinários (MQO) / Máxima Verossimilhança (EMV) dos coeficientes:
+   $$\hat{\beta} = (X^T X)^{-1} X^T Y$$
+   *Propriedade teórica:* São **não-viciados** para qualquer tamanho de amostra ($E[\hat{\beta}] = \beta$).
+
+2. **$QMRes$ (Quadrado Médio dos Resíduos)**:
+   $$QMRes = S^2 = \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{n - p} = \frac{SQRes}{n - p}$$
+   *Propriedade teórica:* É o estimador **não-viciado** clássico da variância do erro ($E[QMRes] = \sigma^2$), pois desconta os $p$ graus de liberdade perdidos na estimação dos coeficientes.
+
+3. **$\hat{\sigma}^2_{MV}$ (Estimador de Máxima Verossimilhança da variância)**:
+   $$\hat{\sigma}^2_{MV} = \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{n} = \left(\frac{n - p}{n}\right) QMRes$$
+   *Propriedade teórica:* Este estimador divide a soma de quadrados por $n$ em vez de $n-p$. Consequentemente:
+   $$E[\hat{\sigma}^2_{MV}] = \left(\frac{n - p}{n}\right) \sigma^2 < \sigma^2$$
+   Ele é **viciado** para amostras pequenas (subestima sistematicamente a variância populacional). Entretanto, quando $n \to \infty$, o termo $\frac{n - p}{n} \to 1$, provando que ele é **assintoticamente não-viciado e consistente**.
+
+---
+
+## O Método de Monte Carlo
+
+Em teoria, conhecemos as fórmulas analíticas. Porém, uma simulação de Monte Carlo permite visualizar numericamente a distribuição empírica dos estimadores:
+
+1. Fixamos os parâmetros reais ($\beta_1=0.5, \beta_2=0.5, \sigma=0.1$).
+2. Para cada tamanho amostral $n \in \{10, 20, 40, 80, 160\}$:
+   - Geramos $B = 2.000$ amostras sintéticas independentes;
+   - Ajustamos o modelo `lm(vY ~ ., data = mData)`;
+   - Guardamos as estimativas obtidas em cada réplica;
+   - Calculamos a média empírica, erro padrão ($SE$), viés ($Bias$), viés absoluto ($|Bias|$) e erro quadrático médio ($MSE$).
+
+---
+
+## Execução Passo a Passo do Código em R
+
+Abaixo, executamos o script adaptando o número de réplicas ($B = 2.000$) para garantir alta precisão estatística e renderização ágil:
+
+```{r}
+#| label: setup-behaviour
+# Carregando os pacotes necessários
+library(ggplot2)
+library(reshape)
+
+# Configuração dos parâmetros da simulação
+iRpl <- 2000                     # Número de replicações de Monte Carlo
+vN <- c(10, 20, 40, 80, 160)     # Vetor de tamanhos amostrais (n)
+iN <- length(vN)
+
+vBeta <- matrix(c(0.5, 0.5), ncol = 1)  # Parâmetros verdadeiros de beta
+iP <- dim(vBeta)[1]                     # Número de parâmetros (p = 2)
+dSigma <- 1/10                          # Desvio padrão verdadeiro (sigma = 0.1)
+vParameters <- c(vBeta, rep(dSigma^2, 2)) # [beta1, beta2, sigma^2, sigma^2]
+
+set.seed(715)  # Garante a reprodutibilidade dos números pseudoaleatórios
+
+# Estrutura 3D para armazenar os resultados:
+# Dimensões: (Parâmetros) x (6 Métricas) x (Tamanhos Amostrais)
+mEstimation <- array(
+  NA, 
+  dim = c(iP + 2, 6, length(vN)),
+  dimnames = list(
+    c(paste(expression(beta), 1:iP, sep = ""), "QMRes", "Sigma2MV"),
+    c("True", "Estimated", "SE", "Bias", "|Bias|", "MSE"),
+    vN
+  )
+)
+```
+
+### O Loop de Simulação
+
+A seguir, iteramos sobre cada tamanho de amostra $n$, gerando a matriz de delineamento $X$ e as respostas $Y$:
+
+```{r}
+#| label: loop-simulacao
+for(i in 1:iN) {
+  # Matriz X com intercepto (coluna de 1s) e preditor Uniforme(0, 1)
+  mX <- cbind(1, matrix(runif(vN[i] * (iP - 1)), nrow = vN[i]))
+  dMu <- mX %*% vBeta
+  
+  # Matriz para guardar as estimativas de cada replicação
+  mTheta <- matrix(NA, nrow = iP + 2, ncol = iRpl)
+  rownames(mTheta) <- c(paste(expression(beta), 1:iP, sep = ""), "QMRes", "sigma2MLE")
+  
+  # Replicações de Monte Carlo
+  for(j in 1:iRpl) {
+    # Amostragem do erro e cálculo de Y
+    vY <- rnorm(vN[i], mean = dMu, sd = dSigma)
+    mData <- data.frame(vY, mX[, -1])
+    
+    # Ajuste do modelo linear
+    mModel <- lm(vY ~ ., data = mData)
+    
+    # Armazenamento das estimativas
+    mTheta[1:iP, j] <- t(mModel$coefficients)
+    mTheta[iP + 1, j] <- (summary(mModel)$sigma^2)                             # QMRes (s^2)
+    mTheta[iP + 2, j] <- ((vN[i] - iP) / vN[i]) * (summary(mModel)$sigma^2)   # sigma^2 de MV
+  }
+  
+  # Cálculo das métricas empíricas de Monte Carlo
+  mEstimation[,, i] <- cbind(
+    vParameters,
+    apply(mTheta, 1, mean),                             # Média estimada
+    apply(mTheta, 1, sd),                               # Erro padrão (SE)
+    apply((mTheta - vParameters), 1, mean),             # Viés (Bias)
+    apply(abs(mTheta - vParameters), 1, mean),          # Viés absoluto
+    apply((mTheta - vParameters)^2, 1, mean)           # Erro Quadrático Médio (MSE)
+  )
+}
+```
+
+### Tabulação e Estruturação dos Resultados
+
+Para permitir a análise tabular e gráfica, convertemos o array tridimensional em formato tabular (*long format*):
+
+```{r}
+#| label: formatacao-tabela
+mSizes <- apply(mEstimation, 3L, c)
+colnames(mSizes) <- paste("n", vN, sep = "")
+mParam <- expand.grid(dimnames(mEstimation)[1:2])
+colnames(mParam) <- c("Parametro", "Medida")
+mTable <- data.frame(mParam, mSizes)
+
+# Exibindo a tabela consolidada de métricas
+knitr::kable(
+  mTable, 
+  digits = 5,
+  caption = "Tabela resumo das métricas de estimação por tamanho amostral n."
+)
+```
+
+---
+
+## Análise Gráfica dos Resultados
+
+### Viés Absoluto dos Coeficientes $\beta_1$ e $\beta_2$
+
+```{r}
+#| label: fig-bias-beta
+#| fig-cap: "Viés absoluto de beta1 e beta2 em função do tamanho amostral n."
+mAux <- mTable[mTable$Medida == "|Bias|", ]
+mAux <- mAux[, -2]
+mDataMelt <- melt(mAux, id = "Parametro")
+levels(mDataMelt$variable) <- vN
+
+pBeta <- ggplot(
+  data = mDataMelt[!mDataMelt$Parametro %in% c("QMRes", "Sigma2MV"), ],
+  aes(x = variable, y = value, group = Parametro)
+) +
+  geom_line(color = "#7B5AA6", linewidth = 0.9, linetype = "dashed") +
+  geom_point(size = 3, color = "#4f43ae") +
+  facet_grid(Parametro ~ .,
+             labeller = as_labeller(
+               c(beta1 = "beta[1]", beta2 = "beta[2]"),
+               label_parsed)) +
+  labs(x = "Tamanho Amostral (n)", y = "Viés Absoluto Médio (|Bias|)") +
+  theme_bw()
+
+pBeta
+```
+
+::: {.callout-note}
+### Interpretação Didática de $\beta$
+Como esperado pela teoria de Gauss-Markov, os estimadores $\hat{\beta}_1$ e $\hat{\beta}_2$ são estritamente **não-viciados** em média. O desvio absoluto individual reduz-se drasticamente com o aumento de $n$, refletindo a **consistência** e a redução da variância dos estimadores.
+:::
+
+### Comparação de Viés: $QMRes$ vs. $\hat{\sigma}^2_{MV}$
+
+```{r}
+#| label: fig-bias-sigma
+#| fig-cap: "Comparação do viés absoluto entre o QMRes (não-viciado) e o Estimador de Máxima Verossimilhança da variância."
+pSigma <- ggplot(
+  data = mDataMelt[mDataMelt$Parametro %in% c("QMRes", "Sigma2MV"), ],
+  aes(x = variable, y = value, group = Parametro, color = Parametro)
+) +
+  geom_line(linewidth = 0.9, linetype = "dashed") +
+  geom_point(size = 3) +
+  scale_color_manual(
+    values = c("QMRes" = "#2E8B57", "Sigma2MV" = "#B85C9E"),
+    labels = c("QMRes (Não-viciado)", expression(hat(sigma)[MV]^2 ~ "(Máx. Verossimilhança)"))
+  ) +
+  facet_grid(Parametro ~ .,
+             labeller = as_labeller(
+               c(QMRes = "MSRes ~ (s^2)", Sigma2MV = "hat(sigma)[MV]^2"),
+               label_parsed)) +
+  labs(
+    x = "Tamanho Amostral (n)", 
+    y = "Viés Absoluto Médio (|Bias|)",
+    color = "Estimador"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+pSigma
+```
+
+::: {.callout-important}
+### Conclusão Teórica e Prática sobre a Variância
+1. **Pequenas Amostras ($n = 10, 20$):** O estimador de Máxima Verossimilhança $\hat{\sigma}^2_{MV}$ apresenta um vício visivelmente superior ao $QMRes$, pois ignora os graus de liberdade perdidos ($n - p$).
+2. **Grandes Amostras ($n \ge 80$):** O fator $\frac{n-p}{n} = \frac{n-2}{n}$ aproxima-se rapidamente de $1$. Como resultado, as curvas de ambos os estimadores convergem.
+3. Isso demonstra na prática o teorema de que o estimador de máxima verossimilhança da variância é **assintoticamente não-viciado**, embora seja **subestimado em amostras finitas**.
+:::
+
+---
+
+# Script 2: Aplicações Práticas (`tmm_script_slides04_applications.R`)
+
+O segundo script ilustra a aplicação do modelo linear a dois problemas com naturezas distintas:
+1. Um modelo de **Regressão Linear Simples** contínua (Dados Westwood);
+2. Um modelo com preditor contínuo e preditor categórico, conhecido como **Modelo de Retas Paralelas** ou ANCOVA (Dados Crickets).
+
+---
+
+## Aplicação 1: Dados Westwood (Regressão Linear Simples)
+
+### Contexto do Problema
+
+O conjunto de dados Westwood analisa o esforço de manufatura:
+- **Variável Explicativa ($X$):** `Lote` (tamanho do lote de peças a produzir);
+- **Variável Resposta ($Y$):** `Horas` (quantidade de horas-homem gastas para concluir o lote).
+
+O objetivo é ajustar uma reta de regressão:
+$$Horas_i = \beta_0 + \beta_1 Lote_i + \varepsilon_i$$
+
+### Ajuste e Resultados em R
+
+```{r}
+#| label: westwood-fit
+# Dados Westwood
+vLote <- c(30, 20, 60, 80, 40, 50, 60, 30, 70, 60)
+vHoras <- c(73, 50, 128, 170, 87, 108, 135, 69, 148, 132)
+iN_west <- length(vHoras)
+
+mDataWest <- data.frame(Horas = vHoras, Lote = vLote)
+
+# Ajuste do Modelo Linear
+outModelWest <- lm(Horas ~ Lote, data = mDataWest)
+summary(outModelWest)
+
+# Coeficientes estimados
+vBetahat_west <- coef(outModelWest)
+iP_west <- length(vBetahat_west)
+
+# Estimativas da Variância Residual
+dQMRes_west <- summary(outModelWest)$sigma^2
+dSigma2EMV_west <- ((iN_west - iP_west) / iN_west) * dQMRes_west
+
+cat("QMRes (s²):", round(dQMRes_west, 4), "\n")
+cat("sigma² MV:", round(dSigma2EMV_west, 4), "\n")
+```
+
+### Gráfico com a Reta Ajustada
+
+```{r}
+#| label: fig-westwood
+#| fig-cap: "Dispersão dos dados Westwood e reta de regressão ajustada."
+pWest <- ggplot(mDataWest, aes(x = Lote, y = Horas)) +
+  geom_point(size = 3.5, color = "#4f43ae") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE,
+              colour = "#B85C9E", linewidth = 1.0, linetype = "longdash") +
+  labs(
+    title = "Ajuste Linear: Horas de Trabalho vs. Tamanho do Lote",
+    x = "Tamanho do Lote (peças)", 
+    y = "Horas Trabalhadas (horas-homem)"
+  ) +
+  theme_bw()
+
+pWest
+```
+
+::: {.callout-tip}
+### Interpretação dos Coeficientes
+- **Intercepto ($\hat{\beta}_0 \approx `r round(vBetahat_west[1], 2)`$):** Estimativa do tempo fixo de preparação/setup antes do início da produção.
+- **Inclinação ($\hat{\beta}_1 \approx `r round(vBetahat_west[2], 2)`$):** Cada peça adicional no lote acarreta um aumento médio esperado de aproximadamente `r round(vBetahat_west[2], 2)` horas de trabalho.
+:::
+
+---
+
+## Aplicação 2: Dados Crickets (Regressão com Variável Categórica / Dummy)
+
+### Contexto Biológico
+
+Biologistas registraram a relação entre a frequência de pulsação sonora (*Pulse*, em pulsos por segundo) emitida por grilos machos e a temperatura ambiente (*Temperature*, em graus Celsius) para duas espécies distintas de grilos:
+1. *Oecanthus exclamationis* (código `ex`);
+2. *Oecanthus niveus* (código `niv`).
+
+### Formulação Matemática (Retas Paralelas)
+
+A inclusão da variável qualitativa `Species` é feita pelo R através de codificação de tratamento (*dummy coding*). Como `ex` vem primeiro em ordem alfabética, ele atua como **nível de referência**:
+
+$$D_{niv, i} = \begin{cases} 1, & \text{se } Species_i = \text{"niv"} \\ 0, & \text{se } Species_i = \text{"ex"} \end{cases}$$
+
+O modelo é dado por:
+$$Pulse_i = \beta_0 + \beta_1 D_{niv, i} + \beta_2 Temperature_i + \varepsilon_i$$
+
+Assim, temos duas retas com **a mesma inclinação** ($\beta_2$, efeito da temperatura) e **interceptos distintos**:
+- **Para a espécie *O. exclamationis* ($D_{niv} = 0$):**
+  $$E(Pulse) = \beta_0 + \beta_2 Temperature$$
+- **Para a espécie *O. niveus* ($D_{niv} = 1$):**
+  $$E(Pulse) = (\beta_0 + \beta_1) + \beta_2 Temperature$$
+
+Aqui, $\beta_1$ representa o deslocamento vertical constante entre as duas espécies para qualquer temperatura fixada.
+
+---
+
+### Execução e Ajuste em R
+
+```{r}
+#| label: crickets-data
+# Entrada dos dados brutos
+mCrickets <- "
+Species  Temperature   Pulse
+ex       20.8   67.9 
+ex       20.8   65.1 
+ex       24     77.3 
+ex       24     78.7 
+ex       24     79.4 
+ex       24     80.4 
+ex       26.2   85.8 
+ex       26.2   86.6 
+ex       26.2   87.5 
+ex       26.2   89.1 
+ex       28.4   98.6 
+ex       29    100.8 
+ex       30.4   99.3 
+ex       30.4  101.7 
+niv      17.2   44.3 
+niv      18.3   47.2 
+niv      18.3   47.6 
+niv      18.3   49.6 
+niv      18.9   50.3 
+niv      18.9   51.8 
+niv      20.4   60 
+niv      21     58.5 
+niv      21     58.9 
+niv      22.1   60.7 
+niv      23.5   69.8 
+niv      24.2   70.9 
+niv      25.9   76.2 
+niv      26.5   76.1 
+niv      26.5   77 
+niv      26.5   77.7 
+niv      28.6   84.7
+"
+
+mDataCrickets <- read.table(file = textConnection(object = mCrickets), header = TRUE)
+mDataCrickets$Species <- as.factor(mDataCrickets$Species)
+iN_crick <- nrow(mDataCrickets)
+
+# Ajuste do Modelo
+outModelCrick <- lm(Pulse ~ ., data = mDataCrickets)
+summary(outModelCrick)
+
+vBetahat_crick <- coef(outModelCrick)
+vPulseHat <- fitted(outModelCrick)
+iP_crick <- length(vBetahat_crick)
+
+# Cálculo manual das variâncias residuais (conforme feito no script original)
+dQMRes_crick <- sum((mDataCrickets$Pulse - vPulseHat)^2) / (iN_crick - iP_crick)
+dSigma2EMV_crick <- mean((mDataCrickets$Pulse - vPulseHat)^2)
+
+cat("QMRes (graus de liberdade n - p):", round(dQMRes_crick, 4), "\n")
+cat("sigma² MV (dividido por n):", round(dSigma2EMV_crick, 4), "\n")
+```
+
+---
+
+### Visualização com Retas Paralelas
+
+No script original, o professor traça as retas correspondentes às duas espécies utilizando a função `geom_abline()`:
+- Reta para `ex`: `intercept = vBetahat[1]`, `slope = vBetahat[3]`
+- Reta para `niv`: `intercept = vBetahat[1] + vBetahat[2]`, `slope = vBetahat[3]`
+
+```{r}
+#| label: fig-crickets
+#| fig-cap: "Dispersão e retas de regressão ajustadas para cada espécie de grilo."
+pCrick <- ggplot(mDataCrickets, aes(x = Temperature, y = Pulse, shape = Species, color = Species)) +
+  geom_point(size = 3.2) +
+  geom_abline(
+    intercept = vBetahat_crick[1],
+    slope = vBetahat_crick[3],
+    color = "#F08080", 
+    linetype = "dashed",
+    linewidth = 1.0
+  ) +
+  geom_abline(
+    intercept = vBetahat_crick[1] + vBetahat_crick[2],
+    slope = vBetahat_crick[3],
+    color = "#1E90FF", 
+    linetype = "longdash",
+    linewidth = 1.0
+  ) +
+  labs(
+    title = "Taxa de Pulsação de Grilos por Espécie vs. Temperatura",
+    x = "Temperatura (°C)", 
+    y = "Pulsos por segundo",
+    color = "Espécie", 
+    shape = "Espécie"
+  ) +
+  scale_color_manual(
+    values = c("ex" = "#F08080", "niv" = "#1E90FF"),
+    labels = c("O. exclamationis (ex)", "O. niveus (niv)")
+  ) +
+  scale_shape_manual(
+    values = c("ex" = 16, "niv" = 17),
+    labels = c("O. exclamationis (ex)", "O. niveus (niv)")
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+pCrick
+```
+
+::: {.callout-note}
+### Interpretação Biológica e Estatística
+- **Efeito da Temperatura ($\hat{\beta}_{Temp} \approx `r round(vBetahat_crick[3], 2)`$):** Para cada aumento de $1^\circ\text{C}$ na temperatura ambiente, a taxa de pulso aumenta em média cerca de $3{,}6$ pulsos por segundo para ambas as espécies.
+- **Diferença entre Espécies ($\hat{\beta}_{Speciesniv} \approx `r round(vBetahat_crick[2], 2)`$):** Em uma dada temperatura constante, a espécie *O. niveus* emite em média cerca de $10$ pulsos a menos por segundo do que a espécie *O. exclamationis*.
+:::
+
+---
+
+# Síntese Didática e Boas Práticas
+
+Para consolidar o aprendizado deste módulo, resumimos as principais lições práticas e conceituais:
+
+| Tópico | Lição Teórica / Prática | Detalhe no Código |
+| :--- | :--- | :--- |
+| **Não-vício de $\hat{\beta}$** | Estimadores MQO de $\beta$ não possuem viés sistemático para qualquer $n$. | A média Monte Carlo dos betas converge para o valor verdadeiro mesmo com $n=10$. |
+| **$QMRes$ vs. $\hat{\sigma}^2_{MV}$** | Dividir por $n$ gera subestimação sistemática da variância em pequenas amostras. | $E[\hat{\sigma}^2_{MV}] = \frac{n-p}{n} \sigma^2$. A correção $n-p$ no $QMRes$ elimina o viés. |
+| **Regressão Linear Simples** | Modela a relação direta entre duas variáveis contínuas. | `lm(Horas ~ Lote)` com previsão via reta única. |
+| **Variáveis Fatoriais** | Incorporação de variáveis categóricas cria interceptos específicos. | `lm(Pulse ~ .)` cria automaticamente a dummy `Speciesniv`. |
+| **Reprodutibilidade** | Uso de `set.seed()` e caminhos relativos para garantir portabilidade. | Evita dependência de diretórios fixos como `D:/Work/...`. |
+
+---
+
+# Informações da Sessão Computacional
+
+```{r}
+#| label: session-info
+sessionInfo()
+```
